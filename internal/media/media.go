@@ -44,7 +44,7 @@ var (
 	seasonPathPattern = regexp.MustCompile(`(?i)^(?:(?:season|s)[\s._-]*)?0*(\d{1,2})$`)
 	yearPattern       = regexp.MustCompile(`(?:^|[\s._([])((?:19|20)\d{2})(?:$|[\s._)\]])`)
 	yearValuePattern  = regexp.MustCompile(`(?:19|20)\d{2}`)
-	resolutionPattern = regexp.MustCompile(`(?i)(?:^|[\s._([])(\d{3,4}p|[48]k)(?:$|[\s._)\]])`)
+	resolutionPattern = regexp.MustCompile(`(?i)(?:^|[\s._(\[-])(\d{3,4}p|[48]k)(?:$|[\s._)\]-])`)
 	spacePattern      = regexp.MustCompile(`\s+`)
 	acronymBoundary   = regexp.MustCompile(`([A-Z])([A-Z][a-z])`)
 	camelCaseBoundary = regexp.MustCompile(`([a-z0-9])([A-Z])`)
@@ -243,7 +243,11 @@ func cleanEpisodeTitle(value string) string {
 		value = value[:loc[0]]
 	}
 	if loc := resolutionPattern.FindStringIndex(value); loc != nil {
-		value = value[:loc[0]]
+		if cleanName(value[:loc[0]]) == "" {
+			value = value[loc[1]:]
+		} else {
+			value = value[:loc[0]]
+		}
 	}
 	value = releaseTokens.ReplaceAllString(value, "")
 	return cleanName(value)
