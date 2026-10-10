@@ -1,0 +1,15 @@
+# Go build and test output
+/media-renamer
+*.test
+*.out
+coverage.*
+
+# Local configuration and environment files
+media-renamer.yaml
+.env
+.env.*
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
