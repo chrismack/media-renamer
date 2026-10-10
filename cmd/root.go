@@ -20,6 +20,8 @@ type options struct {
 	filmFormat         string
 	tmdbAPIKey         string
 	tmdbLang           string
+	organiseShows      bool
+	showFolderFormat   string
 	organiseSeasons    bool
 	seasonFolderFormat string
 	dryRun             bool
@@ -52,6 +54,8 @@ func newRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	flags.StringVar(&opts.filmFormat, "film-format", "", "naming format for films")
 	flags.StringVar(&opts.tmdbAPIKey, "tmdb-api-key", "", "TMDb API key used to find missing episode titles")
 	flags.StringVar(&opts.tmdbLang, "tmdb-language", "en-US", "TMDb result language")
+	flags.BoolVar(&opts.organiseShows, "organise-shows", false, "move TV episodes into show directories")
+	flags.StringVar(&opts.showFolderFormat, "show-folder-format", media.DefaultShowFolderFormat, `show directory format, e.g. "<Show Name>" or "<Show_Name>"`)
 	flags.BoolVar(&opts.organiseSeasons, "organise-seasons", false, "move TV episodes into season directories")
 	flags.StringVar(&opts.seasonFolderFormat, "season-folder-format", media.DefaultSeasonFolderFormat, `season directory format, e.g. "Season <season-number>" or "s-<season-number>"`)
 	flags.BoolVarP(&opts.dryRun, "dry-run", "n", false, "show planned changes without renaming files")
@@ -67,10 +71,19 @@ Use --tv-format or --film-format to configure each media type separately.
 
 Available placeholders:
   <Show Name>       Parsed, path-derived, or provider-supplied TV show name
+  <Show_Name>       Show name with underscores instead of spaces
+  <Show-Name>       Show name with hyphens instead of spaces
+  <ShowName>        Show name with spaces removed
   <Season Number>   Zero-padded season number, e.g. 04
   <Episode Number>  Zero-padded episode number, e.g. 08
   <Episode Title>   Parsed or provider-supplied episode title
+  <Episode_Title>   Episode title with underscores instead of spaces
+  <Episode-Title>   Episode title with hyphens instead of spaces
+  <EpisodeTitle>    Episode title with spaces removed
   <Film Name>       Parsed film name
+  <Film_Name>       Film name with underscores instead of spaces
+  <Film-Name>       Film name with hyphens instead of spaces
+  <FilmName>        Film name with spaces removed
   <Release Year>    Parsed, path-derived, or provider-supplied release year
   <Resolution>      Resolution such as 720p, 1080p, or 2160p
   <File Extension>  Original extension without a leading dot
@@ -80,9 +93,11 @@ Defaults:
   Film: <Film Name>
 
 If <File Extension> is omitted, the original extension is appended automatically.
+Files are left unchanged when the selected format requires metadata for the other media type.
 
 Examples:
   media-renamer -f "<Show Name> - S<Season Number>E<Episode Number> - <Episode Title>"
+  media-renamer --tv-format "<Show_Name>-S<Season Number>E<Episode Number>-<Episode_Title>"
   media-renamer --tv-format "<Show Name> - <Season Number>x<Episode Number> - <Episode Title>"
   media-renamer --film-format "<Film Name> (<Release Year>) - <Resolution>"
 `),
@@ -118,13 +133,30 @@ Examples:
   media-renamer --organise-seasons --season-folder-format "s-<season-number>"
   media-renamer --organise-seasons --season-folder-format "<season-number>"
 `),
+		"show-folder-format": strings.TrimSpace(`
+The --show-folder-format option controls show directory names when
+--organise-shows is enabled.
+
+Available placeholders:
+  <Show Name>  Words separated by spaces, e.g. Ted Lasso
+  <Show_Name>  Words separated by underscores, e.g. Ted_Lasso
+  <Show-Name>  Words separated by hyphens, e.g. Ted-Lasso
+  <ShowName>   Words joined together, e.g. TedLasso
+
+The format must produce one directory name and cannot contain path separators.
+
+Examples:
+  media-renamer --organise-shows
+  media-renamer --organise-shows --show-folder-format "<Show_Name>"
+  media-renamer --organise-shows --organise-seasons
+`),
 	}
 
 	command := &cobra.Command{
 		Use:       "help [topic]",
 		Short:     "Help about media-renamer or a configuration topic",
 		Args:      cobra.MaximumNArgs(1),
-		ValidArgs: []string{"format", "pattern", "season-folder-format"},
+		ValidArgs: []string{"format", "pattern", "season-folder-format", "show-folder-format"},
 		RunE: func(command *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return command.Root().Help()
@@ -132,7 +164,7 @@ Examples:
 			description, exists := topics[args[0]]
 			if !exists {
 				return fmt.Errorf(
-					"unknown help topic %q; available topics: format, pattern, season-folder-format",
+					"unknown help topic %q; available topics: format, pattern, season-folder-format, show-folder-format",
 					args[0],
 				)
 			}
@@ -164,6 +196,8 @@ func run(command *cobra.Command, opts options, args []string) error {
 	planner := media.Planner{
 		TVFormat:           opts.tvFormat,
 		FilmFormat:         opts.filmFormat,
+		OrganiseShows:      opts.organiseShows,
+		ShowFolderFormat:   opts.showFolderFormat,
 		OrganiseSeasons:    opts.organiseSeasons,
 		SeasonFolderFormat: opts.seasonFolderFormat,
 	}
@@ -217,6 +251,12 @@ func applyConfig(command *cobra.Command, opts *options, cfg config) {
 	}
 	if !command.Flags().Changed("organise-seasons") {
 		opts.organiseSeasons = cfg.OrganiseSeasons
+	}
+	if !command.Flags().Changed("organise-shows") {
+		opts.organiseShows = cfg.OrganiseShows
+	}
+	if !command.Flags().Changed("show-folder-format") && cfg.ShowFolderFormat != "" {
+		opts.showFolderFormat = cfg.ShowFolderFormat
 	}
 	if !command.Flags().Changed("season-folder-format") && cfg.SeasonFolderFormat != "" {
 		opts.seasonFolderFormat = cfg.SeasonFolderFormat

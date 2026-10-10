@@ -24,6 +24,12 @@ go build .
 # Move TV episodes into directories such as "Season 3".
 ./media-renamer --organise-seasons
 
+# Move TV episodes into show and season directories.
+./media-renamer --organise-shows --organise-seasons
+
+# Customise show directory names.
+./media-renamer --organise-shows --show-folder-format '<Show_Name>'
+
 # Customise the season directory name.
 ./media-renamer --organise-seasons --season-folder-format 's-<season-number>'
 ```
@@ -34,11 +40,18 @@ By default, TV episodes become `<Show Name> - S<Season Number>E<Episode Number> 
 Supported placeholders are `<Show Name>`, `<Season Number>`, `<Episode Number>`, `<Episode Title>`, `<Film Name>`,
 `<Release Year>`, `<Resolution>`, and `<File Extension>`.
 
+Text placeholders also support underscore, hyphen, and compact variants: `<Show_Name>`, `<Show-Name>`, `<ShowName>`,
+`<Episode_Title>`, `<Episode-Title>`, `<EpisodeTitle>`, `<Film_Name>`, `<Film-Name>`, and `<FilmName>`. For example,
+`<Show_Name>-S<Season Number>E<Episode Number>-<Episode_Title>` produces a filename with no spaces.
+Files are left unchanged when their selected format requires metadata for the other media type, preventing unidentified
+videos from becoming names such as `S00E00.mp4`.
+
 Detailed help for complex options is available through focused help topics:
 
 ```console
 media-renamer help format
 media-renamer help pattern
+media-renamer help show-folder-format
 media-renamer help season-folder-format
 ```
 
@@ -55,9 +68,15 @@ tv_format: "<Show Name> - S<Season Number>E<Episode Number> - <Episode Title>"
 film_format: "<Film Name> (<Release Year>) - <Resolution>"
 tmdb_api_key: "your-api-key"
 tmdb_language: "en-US"
+organise_shows: true
+show_folder_format: "<Show Name>"
 organise_seasons: true
 season_folder_format: "Season <season-number>"
 ```
+
+Show organisation only affects TV episodes. The default show directory format is `<Show Name>`. Use `<Show_Name>`,
+`<Show-Name>`, or `<ShowName>` to produce names such as `Ted_Lasso`, `Ted-Lasso`, or `TedLasso`. When both organisation
+options are enabled, episodes are placed under `<show directory>/<season directory>`.
 
 Season organisation only affects TV episodes. The default directory format is `Season <season-number>`, and the
 placeholder is not zero-padded: season `S03` becomes `Season 3`. Both `<season-number>` and `<Season Number>` are
