@@ -1,5 +1,7 @@
 # Media Renamer
 
+[![CI](https://github.com/chrismack/media-renamer/actions/workflows/ci.yml/badge.svg)](https://github.com/chrismack/media-renamer/actions/workflows/ci.yml)
+
 `media-renamer` standardises TV episode and film filenames while preserving their file extensions.
 
 ## Usage
