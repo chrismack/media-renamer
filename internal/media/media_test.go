@@ -149,6 +149,17 @@ var _ = Describe("Formatting and renaming", func() {
 		Entry("8K", "Film.2024.8k.mkv", "4320p"),
 	)
 
+	It("extracts a hyphenated resolution before the episode title", func() {
+		info, err := Parse("TedLasso-s04e11-1080p-this.is.a.test.mkv")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.Kind).To(Equal(TV))
+		Expect(info.ShowName).To(Equal("Ted Lasso"))
+		Expect(info.Season).To(Equal(4))
+		Expect(info.Episode).To(Equal(11))
+		Expect(info.Resolution).To(Equal("1080p"))
+		Expect(info.EpisodeTitle).To(Equal("This Is a Test"))
+	})
+
 	DescribeTable("formats season directory names",
 		func(format string, season int, expected string) {
 			folder, err := FormatSeasonFolder(season, format)
