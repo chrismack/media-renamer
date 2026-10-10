@@ -10,10 +10,19 @@ permissions:
 
 jobs:
   auto-merge:
-    name: Enable auto-merge
+    name: Approve and enable auto-merge
     runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]' && github.event.pull_request.draft == false
+    # Only Dependabot PRs qualify. All three conditions must hold: the event actor,
+    # the pull request author, and the author being a bot account rather than a
+    # regular user with a similar-looking name.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.user.type == 'Bot'
     steps:
+      # Secondary guard: this action fails if the PR was not produced by Dependabot,
+      # so a spoofed branch cannot reach the approval step below.
       - name: Fetch Dependabot metadata
         id: metadata
         uses: dependabot/fetch-metadata@v2
@@ -24,7 +33,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr review --approve "$PR_URL"
+        run: |
+          set -euo pipefail
+          approved="$(gh pr view "$PR_URL" \
+            --json reviews \
+            --jq '[.reviews[] | select(.author.login == "github-actions" and .state == "APPROVED")] | length')"
+          if [ "$approved" -gt 0 ]; then
+            echo "Pull request already approved by this workflow."
+          else
+            gh pr review --approve "$PR_URL"
+          fi
 
       - name: Enable auto-merge
         env:
