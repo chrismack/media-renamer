@@ -16,6 +16,8 @@ type config struct {
 	Patterns           []string `yaml:"patterns"`
 	TMDbAPIKey         string   `yaml:"tmdb_api_key"`
 	TMDbLanguage       string   `yaml:"tmdb_language"`
+	OrganiseShows      bool     `yaml:"organise_shows"`
+	ShowFolderFormat   string   `yaml:"show_folder_format"`
 	OrganiseSeasons    bool     `yaml:"organise_seasons"`
 	SeasonFolderFormat string   `yaml:"season_folder_format"`
 }

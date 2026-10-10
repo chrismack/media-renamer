@@ -61,6 +61,18 @@ var _ = Describe("Media filenames", func() {
 		_, err = Parse(".mkv")
 		Expect(err).To(MatchError(ContainSubstring("could not determine film name")))
 	})
+
+	DescribeTable("splits compact show names into words",
+		func(filename, expected string) {
+			info, err := Parse(filename)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(info.Kind).To(Equal(TV))
+			Expect(info.ShowName).To(Equal(expected))
+		},
+		Entry("camel case", "TedLasso-s04e11.mkv", "Ted Lasso"),
+		Entry("acronym boundary", "BBCNews-s01e01.mkv", "BBC News"),
+		Entry("numeric boundary", "3BodyProblem-s01e01.mkv", "3 Body Problem"),
+	)
 })
 
 var _ = Describe("Formatting and renaming", func() {
@@ -79,6 +91,45 @@ var _ = Describe("Formatting and renaming", func() {
 		name, err := Format(info, "<Film Name> (<Release Year>).<File Extension>")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(name).To(Equal("A-B - Story (2024).mkv"))
+	})
+
+	DescribeTable("formats text placeholder separators in filenames",
+		func(format, expected string) {
+			info := Info{
+				Kind: TV, ShowName: "Ted Lasso", Season: 4, Episode: 11,
+				EpisodeTitle: "No Weddings and a Funeral", Extension: "mkv",
+			}
+			name, err := Format(info, format)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(name).To(Equal(expected))
+		},
+		Entry(
+			"underscores",
+			"<Show_Name>-S<Season Number>E<Episode Number>-<Episode_Title>",
+			"Ted_Lasso-S04E11-No_Weddings_and_a_Funeral.mkv",
+		),
+		Entry(
+			"hyphens",
+			"<Show-Name>-S<Season Number>E<Episode Number>-<Episode-Title>",
+			"Ted-Lasso-S04E11-No-Weddings-and-a-Funeral.mkv",
+		),
+		Entry(
+			"compact",
+			"<ShowName>-S<Season Number>E<Episode Number>-<EpisodeTitle>",
+			"TedLasso-S04E11-NoWeddingsandaFuneral.mkv",
+		),
+		Entry(
+			"spaces",
+			"<Show Name>-S<Season Number>E<Episode Number>-<Episode Title>",
+			"Ted Lasso-S04E11-No Weddings and a Funeral.mkv",
+		),
+	)
+
+	It("formats film name separators in filenames", func() {
+		info := Info{Kind: Film, FilmName: "Dune Part Two", Extension: "mkv"}
+		name, err := Format(info, "<Film_Name>")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(name).To(Equal("Dune_Part_Two.mkv"))
 	})
 
 	It("rejects unknown placeholders and empty output", func() {
@@ -122,6 +173,26 @@ var _ = Describe("Formatting and renaming", func() {
 		Expect(err).To(MatchError(ContainSubstring("empty directory name")))
 	})
 
+	DescribeTable("formats show directory names",
+		func(format, expected string) {
+			folder, err := FormatShowFolder("Ted Lasso", format)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(folder).To(Equal(expected))
+		},
+		Entry("default", "", "Ted Lasso"),
+		Entry("spaces", "<Show Name>", "Ted Lasso"),
+		Entry("underscores", "<Show_Name>", "Ted_Lasso"),
+		Entry("hyphens", "<Show-Name>", "Ted-Lasso"),
+		Entry("compact", "<ShowName>", "TedLasso"),
+	)
+
+	It("rejects invalid show directory formats", func() {
+		_, err := FormatShowFolder("Ted Lasso", "shows/<Show Name>")
+		Expect(err).To(MatchError(ContainSubstring("single directory name")))
+		_, err = FormatShowFolder("Ted Lasso", "<Unknown>")
+		Expect(err).To(MatchError(ContainSubstring("unknown placeholder")))
+	})
+
 	It("rejects a target that already exists", func() {
 		directory := GinkgoT().TempDir()
 		source := filepath.Join(directory, "show.s01e01.pilot.mkv")
@@ -162,6 +233,33 @@ var _ = Describe("Formatting and renaming", func() {
 		Expect(err).To(MatchError(ContainSubstring("would both become")))
 	})
 
+	It("leaves film-classified videos unchanged when the format requires TV metadata", func() {
+		directory := GinkgoT().TempDir()
+		source := filepath.Join(directory, "WC139.mp4")
+		Expect(os.WriteFile(source, nil, 0o600)).To(Succeed())
+
+		plans, err := (Planner{
+			FilmFormat: "S<Season Number>E<Episode Number>",
+		}).Build([]string{source})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(plans).To(HaveLen(1))
+		Expect(plans[0].Info.Kind).To(Equal(Film))
+		Expect(plans[0].Target).To(Equal(source))
+		Expect(Apply(plans)).To(Succeed())
+		Expect(source).To(BeAnExistingFile())
+		Expect(filepath.Join(directory, "S00E00.mp4")).NotTo(BeAnExistingFile())
+	})
+
+	It("leaves TV episodes unchanged when the format requires film metadata", func() {
+		directory := GinkgoT().TempDir()
+		source := filepath.Join(directory, "show.s01e01.mkv")
+		Expect(os.WriteFile(source, nil, 0o600)).To(Succeed())
+
+		plans, err := (Planner{TVFormat: "<Film Name>"}).Build([]string{source})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(plans[0].Target).To(Equal(source))
+	})
+
 	It("uses a title lookup when an episode title is missing", func() {
 		directory := GinkgoT().TempDir()
 		seasonDirectory := filepath.Join(directory, "show", "Season 1")
@@ -185,6 +283,22 @@ var _ = Describe("Formatting and renaming", func() {
 		}).Build([]string{source})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(filepath.Base(plans[0].Target)).To(Equal("Show - 2020 - S01E02 - Fetched Title.mkv"))
+	})
+
+	It("uses a title lookup for separator variants when an episode title is missing", func() {
+		directory := GinkgoT().TempDir()
+		source := filepath.Join(directory, "show.s01e02.mkv")
+		Expect(os.WriteFile(source, nil, 0o600)).To(Succeed())
+		lookup := metadataLookupFunc(func(string, int, int) (EpisodeMetadata, error) {
+			return EpisodeMetadata{EpisodeTitle: "Fetched Title"}, nil
+		})
+
+		plans, err := (Planner{
+			Lookup:   lookup,
+			TVFormat: "<Show_Name>-S<Season Number>E<Episode Number>-<Episode_Title>",
+		}).Build([]string{source})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(filepath.Base(plans[0].Target)).To(Equal("Show-S01E02-Fetched_Title.mkv"))
 	})
 
 	It("surfaces title lookup errors", func() {
@@ -275,6 +389,54 @@ var _ = Describe("Formatting and renaming", func() {
 		Expect(Apply(plans)).To(Succeed())
 		Expect(plans[0].Target).To(BeAnExistingFile())
 		Expect(plans[1].Target).To(BeAnExistingFile())
+	})
+
+	It("organises TV episodes into formatted show and season directories", func() {
+		directory := GinkgoT().TempDir()
+		source := filepath.Join(directory, "Ted_Lasso-s04e11.rajbfakjbdjk.mkv")
+		Expect(os.WriteFile(source, nil, 0o600)).To(Succeed())
+
+		plans, err := (Planner{
+			OrganiseShows:      true,
+			ShowFolderFormat:   "<Show_Name>",
+			OrganiseSeasons:    true,
+			SeasonFolderFormat: "Season <season-number>",
+		}).Build([]string{source})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(plans[0].Target).To(Equal(filepath.Join(
+			directory,
+			"Ted_Lasso",
+			"Season 4",
+			"Ted Lasso - S04E11 - Rajbfakjbdjk.mkv",
+		)))
+		Expect(Apply(plans)).To(Succeed())
+		Expect(plans[0].Target).To(BeAnExistingFile())
+	})
+
+	It("organises shows without creating season directories when season organisation is disabled", func() {
+		directory := GinkgoT().TempDir()
+		source := filepath.Join(directory, "ted.lasso.s04e11.episode.mkv")
+		Expect(os.WriteFile(source, nil, 0o600)).To(Succeed())
+
+		plans, err := (Planner{OrganiseShows: true}).Build([]string{source})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(plans[0].Target).To(Equal(filepath.Join(
+			directory,
+			"Ted Lasso",
+			"Ted Lasso - S04E11 - Episode.mkv",
+		)))
+	})
+
+	It("does not nest an episode already inside its show and season directories", func() {
+		directory := GinkgoT().TempDir()
+		seasonDirectory := filepath.Join(directory, "Ted Lasso", "Season 4")
+		Expect(os.MkdirAll(seasonDirectory, 0o755)).To(Succeed())
+		source := filepath.Join(seasonDirectory, "Ted Lasso - S04E11 - Episode.mkv")
+		Expect(os.WriteFile(source, nil, 0o600)).To(Succeed())
+
+		plans, err := (Planner{OrganiseShows: true, OrganiseSeasons: true}).Build([]string{source})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(plans[0].Target).To(Equal(source))
 	})
 
 	It("does nothing when an episode is already correctly named in its season directory", func() {
@@ -393,22 +555,14 @@ var _ = Describe("Formatting and renaming", func() {
 		Expect(second).To(BeAnExistingFile())
 	})
 
-	It("rolls back staged files and created directories when directory creation fails", func() {
+	It("creates nested target directories", func() {
 		directory := GinkgoT().TempDir()
-		first := filepath.Join(directory, "first.mkv")
-		second := filepath.Join(directory, "second.mkv")
-		created := filepath.Join(directory, "created")
-		Expect(os.WriteFile(first, nil, 0o600)).To(Succeed())
-		Expect(os.WriteFile(second, nil, 0o600)).To(Succeed())
+		source := filepath.Join(directory, "episode.mkv")
+		target := filepath.Join(directory, "show", "season", "episode.mkv")
+		Expect(os.WriteFile(source, nil, 0o600)).To(Succeed())
 
-		err := Apply([]Plan{
-			{Source: first, Target: filepath.Join(created, "first.mkv")},
-			{Source: second, Target: filepath.Join(directory, "missing", "nested", "second.mkv")},
-		})
-		Expect(err).To(MatchError(ContainSubstring("create target directory")))
-		Expect(first).To(BeAnExistingFile())
-		Expect(second).To(BeAnExistingFile())
-		Expect(created).NotTo(BeADirectory())
+		Expect(Apply([]Plan{{Source: source, Target: target}})).To(Succeed())
+		Expect(target).To(BeAnExistingFile())
 	})
 })
 

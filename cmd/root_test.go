@@ -20,6 +20,7 @@ var _ = Describe("CLI", func() {
 		Expect(output.String()).To(ContainSubstring(`<Show Name> - S<Season Number>E<Episode Number> - <Episode Title>`))
 		Expect(output.String()).To(ContainSubstring(`Season <season-number>`))
 		Expect(output.String()).To(ContainSubstring(`s-<season-number>`))
+		Expect(output.String()).To(ContainSubstring(`<Show_Name>`))
 	})
 
 	DescribeTable("shows detailed flag help topics",
@@ -36,10 +37,13 @@ var _ = Describe("CLI", func() {
 			"format",
 			"format",
 			"<Show Name>",
+			"<Show_Name>",
 			"<Season Number>",
 			"<Episode Number>",
 			"<Episode Title>",
+			"<Episode_Title>",
 			"<Film Name>",
+			"<Film_Name>",
 			"<Release Year>",
 			"<Resolution>",
 			"<File Extension>",
@@ -51,6 +55,13 @@ var _ = Describe("CLI", func() {
 			"<season-number>",
 			"cannot contain path separators",
 		),
+		Entry(
+			"show folder format",
+			"show-folder-format",
+			"<Show_Name>",
+			"<Show-Name>",
+			"<ShowName>",
+		),
 	)
 
 	It("reports the available topics for unknown detailed help", func() {
@@ -59,7 +70,7 @@ var _ = Describe("CLI", func() {
 		command.SetArgs([]string{"help", "unknown"})
 		err := command.Execute()
 		Expect(err).To(MatchError(ContainSubstring(
-			"available topics: format, pattern, season-folder-format",
+			"available topics: format, pattern, season-folder-format, show-folder-format",
 		)))
 	})
 
@@ -152,6 +163,23 @@ var _ = Describe("CLI", func() {
 		Expect(command.Execute()).To(MatchError("no supported media files matched"))
 	})
 
+	It("leaves an unidentified video unchanged when a shared format requires TV metadata", func() {
+		directory := GinkgoT().TempDir()
+		source := filepath.Join(directory, "WC139.mp4")
+		Expect(os.WriteFile(source, nil, 0o600)).To(Succeed())
+
+		var output bytes.Buffer
+		command := newRootCommand(&output, &output)
+		command.SetArgs([]string{
+			"--directory", directory,
+			"--format", "S<Season Number>E<Episode Number>",
+		})
+		Expect(command.Execute()).To(Succeed())
+		Expect(output.String()).To(ContainSubstring("unchanged: WC139.mp4"))
+		Expect(source).To(BeAnExistingFile())
+		Expect(filepath.Join(directory, "S00E00.mp4")).NotTo(BeAnExistingFile())
+	})
+
 	It("uses directory and pattern options with test_data fixtures", func() {
 		directory := GinkgoT().TempDir()
 		for _, fixture := range loadCommandFixtures() {
@@ -192,6 +220,51 @@ var _ = Describe("CLI", func() {
 		))
 		Expect(filepath.Join(directory, "s-3", "Show - S03E02 - An Episode.mkv")).To(BeAnExistingFile())
 		Expect(source).NotTo(BeAnExistingFile())
+	})
+
+	It("organises episodes into formatted show and season folders", func() {
+		directory := GinkgoT().TempDir()
+		source := filepath.Join(directory, "Ted_Lasso-s04e11.rajbfakjbdjk.mkv")
+		Expect(os.WriteFile(source, nil, 0o600)).To(Succeed())
+
+		var output bytes.Buffer
+		command := newRootCommand(&output, &output)
+		command.SetArgs([]string{
+			"--directory", directory,
+			"--organise-shows",
+			"--show-folder-format", "<Show_Name>",
+			"--organise-seasons",
+		})
+		Expect(command.Execute()).To(Succeed())
+		Expect(output.String()).To(ContainSubstring(
+			"Ted_Lasso/Season 4/Ted Lasso - S04E11 - Rajbfakjbdjk.mkv",
+		))
+		Expect(filepath.Join(
+			directory,
+			"Ted_Lasso",
+			"Season 4",
+			"Ted Lasso - S04E11 - Rajbfakjbdjk.mkv",
+		)).To(BeAnExistingFile())
+	})
+
+	It("preserves spaces in show folders parsed from compact titles", func() {
+		directory := GinkgoT().TempDir()
+		source := filepath.Join(directory, "TedLasso-s04e11.episode.mkv")
+		Expect(os.WriteFile(source, nil, 0o600)).To(Succeed())
+
+		var output bytes.Buffer
+		command := newRootCommand(&output, &output)
+		command.SetArgs([]string{
+			"--directory", directory,
+			"--organise-shows",
+			"--show-folder-format", "<Show Name>",
+		})
+		Expect(command.Execute()).To(Succeed())
+		Expect(filepath.Join(
+			directory,
+			"Ted Lasso",
+			"Ted Lasso - S04E11 - Episode.mkv",
+		)).To(BeAnExistingFile())
 	})
 
 	It("reads season organisation options from configuration", func() {

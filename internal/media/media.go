@@ -18,6 +18,7 @@ const (
 const (
 	DefaultTVFormat           = "<Show Name> - S<Season Number>E<Episode Number> - <Episode Title>"
 	DefaultFilmFormat         = "<Film Name>"
+	DefaultShowFolderFormat   = "<Show Name>"
 	DefaultSeasonFolderFormat = "Season <season-number>"
 )
 
@@ -45,6 +46,8 @@ var (
 	yearValuePattern  = regexp.MustCompile(`(?:19|20)\d{2}`)
 	resolutionPattern = regexp.MustCompile(`(?i)(?:^|[\s._([])(\d{3,4}p|[48]k)(?:$|[\s._)\]])`)
 	spacePattern      = regexp.MustCompile(`\s+`)
+	acronymBoundary   = regexp.MustCompile(`([A-Z])([A-Z][a-z])`)
+	camelCaseBoundary = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 	releaseTokens     = regexp.MustCompile(`(?i)(?:^|[\s._([])(?:bluray|blu-ray|brrip|webrip|web-dl|web|hdtv|dvdrip|remux|xvid|x26[45]|h26[45]|hevc|av1|aac\d*|dts(?:-hd)?|proper|repack|extended|unrated|hdr10?|dv)(?:$|[\s._)\]-]).*$`)
 )
 
@@ -155,6 +158,9 @@ func Format(info Info, format string) (string, error) {
 		"<Resolution>":     info.Resolution,
 		"<File Extension>": info.Extension,
 	}
+	addTextVariants(values, "Show", "Name", info.ShowName)
+	addTextVariants(values, "Episode", "Title", info.EpisodeTitle)
+	addTextVariants(values, "Film", "Name", info.FilmName)
 	name := format
 	for placeholder, value := range values {
 		name = strings.ReplaceAll(name, placeholder, value)
@@ -171,6 +177,12 @@ func Format(info Info, format string) (string, error) {
 		name += "." + info.Extension
 	}
 	return name, nil
+}
+
+func addTextVariants(values map[string]string, prefix, suffix, value string) {
+	values["<"+prefix+"_"+suffix+">"] = strings.ReplaceAll(value, " ", "_")
+	values["<"+prefix+"-"+suffix+">"] = strings.ReplaceAll(value, " ", "-")
+	values["<"+prefix+suffix+">"] = strings.ReplaceAll(value, " ", "")
 }
 
 func FormatSeasonFolder(season int, format string) (string, error) {
@@ -195,7 +207,32 @@ func FormatSeasonFolder(season int, format string) (string, error) {
 	return folder, nil
 }
 
+func FormatShowFolder(showName, format string) (string, error) {
+	if strings.TrimSpace(format) == "" {
+		format = DefaultShowFolderFormat
+	}
+	folder := strings.NewReplacer(
+		"<Show Name>", showName,
+		"<Show_Name>", strings.ReplaceAll(showName, " ", "_"),
+		"<Show-Name>", strings.ReplaceAll(showName, " ", "-"),
+		"<ShowName>", strings.ReplaceAll(showName, " ", ""),
+	).Replace(format)
+	if strings.Contains(folder, "<") || strings.Contains(folder, ">") {
+		return "", fmt.Errorf("show folder format contains an unknown placeholder: %q", folder)
+	}
+	if strings.ContainsAny(folder, `/\`) || folder == "." || folder == ".." {
+		return "", fmt.Errorf("show folder format must produce a single directory name")
+	}
+	folder = cleanFormattedName(folder)
+	if folder == "" {
+		return "", fmt.Errorf("show folder format produced an empty directory name")
+	}
+	return folder, nil
+}
+
 func cleanName(value string) string {
+	value = acronymBoundary.ReplaceAllString(value, "$1 $2")
+	value = camelCaseBoundary.ReplaceAllString(value, "$1 $2")
 	value = strings.NewReplacer(".", " ", "_", " ", "-", " ").Replace(value)
 	value = strings.Trim(value, " \t-_.")
 	return titleCase(spacePattern.ReplaceAllString(value, " "))
